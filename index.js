@@ -8,6 +8,7 @@ const session = require("express-session");
 var FileStore = require("session-file-store")(session);
 const cookieParser = require("cookie-parser");
 const { urlencoded } = require("body-parser");
+const f = require("session-file-store");
 
 app.use(express.json());
 app.use(cookieParser());
@@ -60,16 +61,7 @@ const validEmail = (email) => {
 //     })
 // };
 
-// const dbInsertItem = (item,cost) => { 
-//     return new Promise((res,rej) => {
-//         mySqlConnection.query(`INSERT into items(item,cost) values ('${item}' , '${cost}') ` , (e , r , f) =>{
-//             if(!e){
-//                 res();
-//             }          
-//             rej();                                                  
-//         })
-//     })
-// };
+
 
 // const dbInsertOrder = (address,username,item,quantity) => { 
 //     return new Promise((res,rej) => {
@@ -125,11 +117,22 @@ app.get('/menu' , (req,res) => {
     }
 })
 
+app.post("/logout", (req, res) => {
+    if (req.session.authenticated) {
+      req.session.destroy();
+      res.clearCookie();
+      res.status(200).json({ msg: "logout" });
+    } else {
+      res.status(401).json({ msg: "not a loggedin user" });
+    }
+  });
+
 app.post('/login' , (req,res) => {
     var { username, password } = req.body;
+    console.log('here' , {username,password});
     try {
-        if (req.session.authenticated) {
-            return res.status(200).json({"msg" : "sucessfully logged in :)"});
+        if (req.session.authenticated && req.session.username == username && req.session.password == password) {
+            return res.status(200).json({"msg" : 1 });
         }
         let sql = `Select * from user where username="${username}"`;
         db.con.query(sql, async (error, result) => {
@@ -137,10 +140,12 @@ app.post('/login' , (req,res) => {
 
             if (Object.keys(obj).length === 1) {
                 let flag = await decryptPassword(req, res, password, obj[0].password);
-                if (!flag) res.status(400).json({ msg: "password not match" });
+            
+                if (!flag) return res.status(400).json({ msg: "password not match" });
                 req.session.authenticated = true;
                 req.session.username = username;
-                return res.status(200).json({"msg" : "sucessfully logged in :)"});
+                req.session.password = password;
+                return res.status(200).json({"msg" : 1});
             } else {
                 return res.status(400).json({ msg: "invalid user" });
             }
@@ -186,32 +191,83 @@ app.post("/register", async (req, res) => {;
     }
 });
 
-app.post("/placeOrder", (req, res) => {
+// app.post("/placeOrder", (req, res) => {
+//     if (req.session.authenticated) {
+//       try {
+//         var { address } = req.body.address;
+//         if (address === null || address === "")
+//           res.status(401).json({ msg: "enter address cannot be empty" });
+  
+//         for (var key in req.body.order) {
+//           {
+//             let sql = `INSERT INTO pendingorders (address,item,quantity,username) values("${address}","${key}","${req.body.order[key]}","${req.session.username}")`;
+//             db.con.query(sql, (error, result) => {
+//               if (error) {
+//                 res.status(501).json({ msg: `${error}` });
+//               }
+//             });
+//           }
+//           res.status(200).json({ msg: "waiting for confirmation" });
+//         }
+//       } catch (err) {
+//         res.status(501).json({ msg: `${err}` });
+//       }
+//     } else {
+//       res.status(401).json({ msg: "first log in" });
+//     }
+//   });
+
+app.listen(3000 , () => {
+    console.log('Server is up and running on port 3000');
+});
+
+
+
+const dbInsertItem = (sql) => { 
+    return new Promise((res,rej) => {
+        mySqlConnection.query(sql, (e , r , f) =>{
+            if(!e){
+                res(1);
+            }          
+            rej(0);                                                  
+        })
+    })
+};
+
+
+let ff = (req) => {
+    return new Promise( async (res,rej) => {
+        var  address  = req.body.address;
+        for(var key in req.body){
+            if(key==='address') continue;
+            let sql = `INSERT INTO orders(address,item,quantity,username,status) values("${address}","${key}","${req.body[key]}","${req.session.username}","0")`;
+            let x =  await dbInsertItem(sql);
+            if(!x) rej(0);
+        }
+        res(1);
+    });
+}
+
+
+
+
+//xxx
+app.post("/placeOrder", async (req, res) => {
+    console.log(req.body);
     if (req.session.authenticated) {
       try {
-        var { address } = req.body.address;
+        var  address  = req.body.address;
+        //console.log(address);
         if (address === null || address === "")
           res.status(401).json({ msg: "enter address cannot be empty" });
   
-        for (var key in req.body.order) {
-          {
-            let sql = `INSERT INTO pendingorders (address,item,quantity,username) values("${address}","${key}","${req.body.order[key]}","${req.session.username}")`;
-            db.con.query(sql, (error, result) => {
-              if (error) {
-                res.status(501).json({ msg: `${error}` });
-              }
-            });
-          }
-          res.status(200).json({ msg: "waiting for confirmation" });
-        }
+        let x_x = await ff(req);
+        if(x_x) return res.status(200).json({ msg: "waiting for confirmation" });
+        
       } catch (err) {
-        res.status(501).json({ msg: `${err}` });
+        return res.status(501).json({ "msg" : err });
       }
     } else {
       res.status(401).json({ msg: "first log in" });
     }
   });
-
-app.listen(3000 , () => {
-    console.log('Server is up and running on port 3000');
-});
